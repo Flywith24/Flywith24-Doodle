@@ -75,9 +75,6 @@ class SimpleDoodleView @JvmOverloads constructor(
         velocityY: Float
     ): Boolean {
         Log.i(TAG, "onFling: ")
-
-        mCurrentPath = null
-
         return false
     }
 
