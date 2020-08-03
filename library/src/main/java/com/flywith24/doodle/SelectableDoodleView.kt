@@ -129,12 +129,24 @@ class SelectableDoodleView @JvmOverloads constructor(
         return null
     }
 
+    private fun isInActionIcon(e: MotionEvent): ActionIconItem? {
+        for (item in mActionIcons) {
+            if (item.bounds.contains(e.x, e.y)) {
+                return item
+            }
+        }
+        return null
+    }
+
     override fun onDown(e: MotionEvent): Boolean {
         Log.i(TAG, "onDown: ")
         if (mSelectedPath != null) {
             when {
+                isInActionIcon(e) != null -> {
+                    Log.i(TAG, "onDown: 点击了图标")
+                    return false
+                }
                 isInPath(e) == null -> mSelectedPath = null
-
             }
         }
 
