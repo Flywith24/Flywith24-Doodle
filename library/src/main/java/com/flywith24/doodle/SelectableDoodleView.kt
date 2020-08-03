@@ -38,11 +38,40 @@ class SelectableDoodleView @JvmOverloads constructor(
     private val mGestureDetector by lazy { GestureDetector(context, this) }
 
     private val mPathList = ArrayList<PathItem>()
+    private val mActionIcons = ArrayList<Bitmap>()
     private var mCurrentPath: PathItem? = null
     private var mSelectedPath: PathItem? = null
     private var mLastX = 0f
     private var mLastY = 0f
 
+    init {
+        val options =
+            BitmapFactory.Options().apply {
+                /*    inPreferredConfig = Bitmap.Config.RGB_565
+                    inSampleSize = 2*/
+            }
+        mActionIcons.add(
+            BitmapFactory.decodeResource(
+                resources,
+                R.drawable.doodle_action_btn_delete_n,
+                options
+            )
+        )
+        mActionIcons.add(
+            BitmapFactory.decodeResource(
+                resources,
+                R.drawable.doodle_action_btn_rotate_n,
+                options
+            )
+        )
+        mActionIcons.add(
+            BitmapFactory.decodeResource(
+                resources,
+                R.drawable.doodle_action_btn_scale_n,
+                options
+            )
+        )
+    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_UP) {
@@ -67,6 +96,24 @@ class SelectableDoodleView @JvmOverloads constructor(
                     bounds.right + INSIDE_WIDTH,
                     bounds.bottom + INSIDE_WIDTH,
                     mBoundPaint
+                )
+                canvas.drawBitmap(
+                    mActionIcons[0],
+                    bounds.left - INSIDE_WIDTH - mActionIcons[0].width / 2,
+                    bounds.top - INSIDE_WIDTH - mActionIcons[0].height / 2,
+                    null
+                )
+                canvas.drawBitmap(
+                    mActionIcons[1],
+                    bounds.right - INSIDE_WIDTH,
+                    bounds.top - INSIDE_WIDTH - mActionIcons[1].height / 2,
+                    null
+                )
+                canvas.drawBitmap(
+                    mActionIcons[2],
+                    bounds.right - INSIDE_WIDTH,
+                    bounds.bottom - INSIDE_WIDTH,
+                    null
                 )
             }
             canvas.save()
@@ -171,12 +218,12 @@ class SelectableDoodleView @JvmOverloads constructor(
         /**
          * 选中框宽度
          */
-        private val STROKE_WIDTH = 2f.dp
+        private val STROKE_WIDTH = 1f.dp
 
         /**
          * 选中框内边距
          */
-        private val INSIDE_WIDTH = 5 * STROKE_WIDTH
+        private val INSIDE_WIDTH = 10f.dp
 
         /**
          * 防止滚出的安全距离
