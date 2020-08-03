@@ -51,7 +51,7 @@ class SelectableDoodleView @JvmOverloads constructor(
 
     init {
         for (resId in mResIds) {
-            mActionIcons.add(ActionIconItem(BitmapFactory.decodeResource(resources, resId)))
+            mActionIcons.add(ActionIconItem(BitmapFactory.decodeResource(resources, resId), resId))
         }
     }
 
@@ -141,9 +141,11 @@ class SelectableDoodleView @JvmOverloads constructor(
     override fun onDown(e: MotionEvent): Boolean {
         Log.i(TAG, "onDown: ")
         if (mSelectedPath != null) {
+            val iconItem = isInActionIcon(e)
             when {
-                isInActionIcon(e) != null -> {
+                iconItem != null -> {
                     Log.i(TAG, "onDown: 点击了图标")
+                    iconItemClick(iconItem)
                     return false
                 }
                 isInPath(e) == null -> mSelectedPath = null
@@ -152,6 +154,17 @@ class SelectableDoodleView @JvmOverloads constructor(
 
         return true
 
+    }
+
+    private fun iconItemClick(iconItem: ActionIconItem) {
+        when (iconItem.resId) {
+            R.drawable.doodle_action_btn_delete_n -> {
+            }
+            R.drawable.doodle_action_btn_scale_n -> {
+            }
+            R.drawable.doodle_action_btn_rotate_n -> {
+            }
+        }
     }
 
     override fun onFling(
@@ -215,7 +228,7 @@ class SelectableDoodleView @JvmOverloads constructor(
         var offsetY = 0f
     }
 
-    class ActionIconItem(val bitmap: Bitmap) {
+    class ActionIconItem(val bitmap: Bitmap, val resId: Int) {
         var left = 0f
         var top = 0f
         val bounds: RectF = RectF()
