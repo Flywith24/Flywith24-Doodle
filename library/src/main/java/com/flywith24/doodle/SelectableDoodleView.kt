@@ -38,39 +38,21 @@ class SelectableDoodleView @JvmOverloads constructor(
     private val mGestureDetector by lazy { GestureDetector(context, this) }
 
     private val mPathList = ArrayList<PathItem>()
-    private val mActionIcons = ArrayList<Bitmap>()
+    private val mActionIcons = ArrayList<ActionIconItem>()
+    private val mResIds = listOf(
+        R.drawable.doodle_action_btn_delete_n,
+        R.drawable.doodle_action_btn_rotate_n,
+        R.drawable.doodle_action_btn_scale_n
+    )
     private var mCurrentPath: PathItem? = null
     private var mSelectedPath: PathItem? = null
     private var mLastX = 0f
     private var mLastY = 0f
 
     init {
-        val options =
-            BitmapFactory.Options().apply {
-                /*    inPreferredConfig = Bitmap.Config.RGB_565
-                    inSampleSize = 2*/
-            }
-        mActionIcons.add(
-            BitmapFactory.decodeResource(
-                resources,
-                R.drawable.doodle_action_btn_delete_n,
-                options
-            )
-        )
-        mActionIcons.add(
-            BitmapFactory.decodeResource(
-                resources,
-                R.drawable.doodle_action_btn_rotate_n,
-                options
-            )
-        )
-        mActionIcons.add(
-            BitmapFactory.decodeResource(
-                resources,
-                R.drawable.doodle_action_btn_scale_n,
-                options
-            )
-        )
+        for (resId in mResIds) {
+            mActionIcons.add(ActionIconItem(BitmapFactory.decodeResource(resources, resId)))
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -90,37 +72,41 @@ class SelectableDoodleView @JvmOverloads constructor(
         for (item in mPathList) {
             val bounds = item.bounds
             if (mSelectedPath == item) {
-                canvas.drawRect(
-                    bounds.left - INSIDE_WIDTH,
-                    bounds.top - INSIDE_WIDTH,
-                    bounds.right + INSIDE_WIDTH,
-                    bounds.bottom + INSIDE_WIDTH,
-                    mBoundPaint
-                )
-                canvas.drawBitmap(
-                    mActionIcons[0],
-                    bounds.left - INSIDE_WIDTH - mActionIcons[0].width / 2,
-                    bounds.top - INSIDE_WIDTH - mActionIcons[0].height / 2,
-                    null
-                )
-                canvas.drawBitmap(
-                    mActionIcons[1],
-                    bounds.right - INSIDE_WIDTH,
-                    bounds.top - INSIDE_WIDTH - mActionIcons[1].height / 2,
-                    null
-                )
-                canvas.drawBitmap(
-                    mActionIcons[2],
-                    bounds.right - INSIDE_WIDTH,
-                    bounds.bottom - INSIDE_WIDTH,
-                    null
-                )
+                drawBound(canvas, bounds)
             }
             canvas.save()
             canvas.translate(item.offsetX, item.offsetY)
             canvas.drawPath(item.path, mPaint)
             canvas.restore()
         }
+    }
+
+    private fun drawBound(canvas: Canvas, bounds: RectF) {
+        canvas.drawRect(
+            bounds.left - INSIDE_WIDTH,
+            bounds.top - INSIDE_WIDTH,
+            bounds.right + INSIDE_WIDTH,
+            bounds.bottom + INSIDE_WIDTH,
+            mBoundPaint
+        )
+
+        //左上角 删除按钮
+        val delete = mActionIcons[0]
+        delete.left = bounds.left - INSIDE_WIDTH - delete.bitmap.width / 2
+        delete.top = bounds.top - INSIDE_WIDTH - delete.bitmap.height / 2
+        canvas.drawBitmap(delete.bitmap, delete.left, delete.top, null)
+
+        //右上角 旋转按钮
+        val rotate = mActionIcons[1]
+        rotate.left = bounds.right - INSIDE_WIDTH
+        rotate.top = bounds.top - INSIDE_WIDTH - rotate.bitmap.height / 2
+        canvas.drawBitmap(rotate.bitmap, rotate.left, rotate.top, null)
+
+        //右下角 缩放按钮
+        val scale = mActionIcons[2]
+        scale.left = bounds.right - INSIDE_WIDTH
+        scale.top = bounds.bottom - INSIDE_WIDTH
+        canvas.drawBitmap(scale.bitmap, scale.left, scale.top, null)
     }
 
     override fun onShowPress(e: MotionEvent?) {
@@ -145,7 +131,12 @@ class SelectableDoodleView @JvmOverloads constructor(
 
     override fun onDown(e: MotionEvent): Boolean {
         Log.i(TAG, "onDown: ")
-        if (mSelectedPath != null && isInPath(e) == null) mSelectedPath = null
+        if (mSelectedPath != null) {
+            when {
+                isInPath(e) == null -> mSelectedPath = null
+
+            }
+        }
 
         return true
 
@@ -210,6 +201,16 @@ class SelectableDoodleView @JvmOverloads constructor(
             }
         var offsetX = 0f
         var offsetY = 0f
+    }
+
+    class ActionIconItem(val bitmap: Bitmap) {
+        var left = 0f
+        var top = 0f
+        val bounds: RectF = RectF()
+            get() {
+                field.set(left, top, left + bitmap.width, top + bitmap.height)
+                return field
+            }
     }
 
     companion object {
