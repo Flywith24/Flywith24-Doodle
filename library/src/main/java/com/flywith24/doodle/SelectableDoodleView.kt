@@ -40,7 +40,7 @@ class SelectableDoodleView @JvmOverloads constructor(
     private val mScaleDetector by lazy { ScaleGestureDetector(context, this) }
     private var mTransform = Matrix()
     private val mPathList = ArrayList<PathItem>()
-    private val mActionIcons = ArrayList<ActionIconItem>()
+    private val mActionIcons = HashMap<Int, ActionIconItem>()
     private val mResIds = listOf(
         R.drawable.doodle_action_btn_delete_n,
         R.drawable.doodle_action_btn_rotate_n,
@@ -53,7 +53,8 @@ class SelectableDoodleView @JvmOverloads constructor(
 
     init {
         for (resId in mResIds) {
-            mActionIcons.add(ActionIconItem(BitmapFactory.decodeResource(resources, resId), resId))
+            mActionIcons[resId] =
+                ActionIconItem(BitmapFactory.decodeResource(resources, resId), resId)
         }
     }
 
@@ -97,14 +98,11 @@ class SelectableDoodleView @JvmOverloads constructor(
         return null
     }
 
-    private fun isInActionIcon(e: MotionEvent): ActionIconItem? {
-        for (item in mActionIcons) {
-            if (item.bounds.contains(e.x, e.y)) {
-                return item
-            }
-        }
-        return null
-    }
+    /**
+     * 是否点击到 action 按钮
+     */
+    private fun isInActionIcon(resId: Int, e: MotionEvent): Boolean =
+        mActionIcons[resId]?.bounds?.contains(e.x, e.y) ?: false
 
     private fun drawBound(canvas: Canvas) {
         if (mSelectedPath == null) return
@@ -119,40 +117,22 @@ class SelectableDoodleView @JvmOverloads constructor(
         )
         if (mSelectedPath?.isScaling != true) {
             //左上角 删除按钮
-            val delete = mActionIcons[0]
+            val delete = mActionIcons[R.drawable.doodle_action_btn_delete_n]!!
             delete.left = bounds.left - INSIDE_WIDTH - delete.bitmap.width / 2
             delete.top = bounds.top - INSIDE_WIDTH - delete.bitmap.height / 2
             canvas.drawBitmap(delete.bitmap, delete.left, delete.top, null)
 
             //右上角 旋转按钮
-            val rotate = mActionIcons[1]
+            val rotate = mActionIcons[R.drawable.doodle_action_btn_rotate_n]!!
             rotate.left = bounds.right - INSIDE_WIDTH
             rotate.top = bounds.top - INSIDE_WIDTH - rotate.bitmap.height / 2
             canvas.drawBitmap(rotate.bitmap, rotate.left, rotate.top, null)
 
             //右下角 缩放按钮
-            val scale = mActionIcons[2]
+            val scale = mActionIcons[R.drawable.doodle_action_btn_scale_n]!!
             scale.left = bounds.right - INSIDE_WIDTH
             scale.top = bounds.bottom - INSIDE_WIDTH
             canvas.drawBitmap(scale.bitmap, scale.left, scale.top, null)
-        }
-    }
-
-    private fun iconItemClick(iconItem: ActionIconItem) {
-        when (iconItem.resId) {
-            R.drawable.doodle_action_btn_delete_n -> {
-                Log.i(TAG, "iconItemClick: 删除")
-                mPathList.remove(mSelectedPath)
-                mSelectedPath = null
-                invalidate()
-            }
-            R.drawable.doodle_action_btn_rotate_n -> {
-                Log.i(TAG, "iconItemClick: 旋转")
-            }
-            R.drawable.doodle_action_btn_scale_n -> {
-                Log.i(TAG, "iconItemClick: 缩放")
-            }
-
         }
     }
 
@@ -163,16 +143,22 @@ class SelectableDoodleView @JvmOverloads constructor(
     }
 
     override fun onDown(e: MotionEvent): Boolean {
-        Log.i(TAG, "onDown: ")
+        Log.d(TAG, "onDown: ")
         if (mSelectedPath != null) {
-            val iconItem = isInActionIcon(e)
             when {
-                iconItem != null -> {
-                    Log.i(TAG, "onDown: 点击了图标")
-                    iconItemClick(iconItem)
-                    //点击了图标，不接管触摸逻辑
+                //如果是点击到删除按钮，直接删除不传递事件
+                isInActionIcon(R.drawable.doodle_action_btn_delete_n, e) -> {
+                    mPathList.remove(mSelectedPath!!)
+                    mSelectedPath = null
+                    invalidate()
                     return false
                 }
+                // 如果是点击到选中或缩放，do nothing
+                isInActionIcon(R.drawable.doodle_action_btn_rotate_n, e)
+                        || isInActionIcon(R.drawable.doodle_action_btn_scale_n, e) -> {
+                    //do nothing
+                }
+                // 已有选中 item，且新点击的位置不是已画路径区域（前两个判断优先级更高）
                 isInPath(e) == null -> mSelectedPath = null
             }
         }
@@ -209,7 +195,6 @@ class SelectableDoodleView @JvmOverloads constructor(
                 mLastX = e1.x
                 mLastY = e1.y
             } else {
-                Log.w(TAG, "quadTo: $mLastX $mLastY")
                 //贝塞尔曲线
                 mCurrentPath!!.path.quadTo(
                     mLastX,
@@ -221,9 +206,20 @@ class SelectableDoodleView @JvmOverloads constructor(
                 mLastY = e2.y
             }
         } else {
-            //拖拽移动
-            mSelectedPath!!.offsetX = mSelectedPath!!.offsetX - distanceX
-            mSelectedPath!!.offsetY = mSelectedPath!!.offsetY - distanceY
+            Log.i(TAG, "onScroll: ")
+            when {
+                isInActionIcon(R.drawable.doodle_action_btn_rotate_n, e1) -> {
+                    Log.e(TAG, "旋转: ")
+                }
+                isInActionIcon(R.drawable.doodle_action_btn_scale_n, e1) -> {
+                    Log.e(TAG, "缩放: ")
+                }
+                else -> {
+                    //拖拽移动
+                    mSelectedPath!!.offsetX = mSelectedPath!!.offsetX - distanceX
+                    mSelectedPath!!.offsetY = mSelectedPath!!.offsetY - distanceY
+                }
+            }
         }
         invalidate()
         return false
@@ -234,7 +230,7 @@ class SelectableDoodleView @JvmOverloads constructor(
     }
 
     override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-        Log.i(TAG, "onScaleBegin: ")
+        Log.d(TAG, "onScaleBegin: ")
         mSelectedPath?.apply {
             isScaling = true
             initialScale = currentScale
@@ -245,7 +241,7 @@ class SelectableDoodleView @JvmOverloads constructor(
     }
 
     override fun onScaleEnd(detector: ScaleGestureDetector) {
-        Log.i(TAG, "onScaleEnd: ")
+        Log.d(TAG, "onScaleEnd: ")
     }
 
     override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -254,7 +250,7 @@ class SelectableDoodleView @JvmOverloads constructor(
             mTransform.setScale(currentScale, currentScale, pivotX, pivotY)
             // 对 originPath 做 transform，结果影响到 path，originPath 保持不变
             originPath.transform(mTransform, path)
-            Log.e(TAG, "onScale: $currentScale")
+            Log.d(TAG, "onScale: $currentScale")
         }
 
         invalidate()
