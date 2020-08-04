@@ -159,10 +159,16 @@ class SelectableDoodleView @JvmOverloads constructor(
     private fun iconItemClick(iconItem: ActionIconItem) {
         when (iconItem.resId) {
             R.drawable.doodle_action_btn_delete_n -> {
+                Log.i(TAG, "iconItemClick: 删除")
+                mPathList.remove(mSelectedPath)
+                mSelectedPath = null
+                invalidate()
             }
             R.drawable.doodle_action_btn_scale_n -> {
+                Log.i(TAG, "iconItemClick: 缩放")
             }
             R.drawable.doodle_action_btn_rotate_n -> {
+                Log.i(TAG, "iconItemClick: 旋转")
             }
         }
     }
