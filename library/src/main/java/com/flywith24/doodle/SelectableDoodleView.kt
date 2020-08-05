@@ -10,7 +10,6 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import kotlin.math.asin
 import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.sqrt
 
 
@@ -72,6 +71,7 @@ class SelectableDoodleView @JvmOverloads constructor(
                 mCurrentPath = null
             } else {
                 //将边框上的 icon 显示出来
+                mSelectedPath!!.isButtonScaling = false
                 mSelectedPath!!.isScaling = false
                 mSelectedPath!!.isRoting = false
                 invalidate()
@@ -119,7 +119,7 @@ class SelectableDoodleView @JvmOverloads constructor(
                 bounds.bottom + INSIDE_WIDTH,
                 mBoundPaint
             )
-            if (!isScaling && !isRoting) {
+            if (!isButtonScaling && !isRoting && !isScaling) {
                 //左上角 删除按钮
                 val delete = mActionIcons[R.drawable.doodle_action_btn_delete_n]!!
                 delete.left = bounds.left - INSIDE_WIDTH - delete.bitmap.width / 2
@@ -166,7 +166,7 @@ class SelectableDoodleView @JvmOverloads constructor(
 
                 }
                 isInActionIcon(R.drawable.doodle_action_btn_scale_n, e) -> {
-                    isScaling = true
+                    isButtonScaling = true
                     initialScale = currentScale
                     pivotX = bounds.right - bounds.width() / 2
                     pivotY = bounds.bottom - bounds.height() / 2
@@ -248,15 +248,14 @@ class SelectableDoodleView @JvmOverloads constructor(
                          isRoting = true
                      }
                  }*/
-                isInActionIcon(R.drawable.doodle_action_btn_scale_n, e1) -> {
+                mSelectedPath!!.isButtonScaling
+                        || isInActionIcon(R.drawable.doodle_action_btn_scale_n, e1) -> {
                     mSelectedPath!!.apply {
-                        isScaling = true
+                        isButtonScaling = true
                         pivotX = bounds.right - bounds.width() / 2
                         pivotY = bounds.bottom - bounds.height() / 2
-
                         currentScale =
                             initialScale * getDistance(pivotX, pivotY, e2.x, e2.y) / originDistance
-                        currentScale = max(currentScale, MIN_SCALE)
                         Log.e(TAG, "按钮缩放 onScale: $currentScale")
                         transformPath()
                     }
@@ -278,7 +277,13 @@ class SelectableDoodleView @JvmOverloads constructor(
 
     private fun PathItem.transformPath() {
         transform.reset()
-        transform.preScale(currentScale, currentScale, pivotX, pivotY)
+        transform.preScale(
+            currentScale,
+            currentScale,
+            originBounds.centerX(),
+            originBounds.centerY()
+        )
+        Log.i(TAG, "transformPath: preScale ${originBounds.centerX()} ,${originBounds.centerY()}")
         transform.postTranslate(offsetX, offsetY)
         // 对 originPath 做 transform，结果影响到 path，originPath 保持不变
         originPath.transform(transform, path)
@@ -306,7 +311,7 @@ class SelectableDoodleView @JvmOverloads constructor(
     override fun onScale(detector: ScaleGestureDetector): Boolean {
         mSelectedPath?.apply {
             currentScale = initialScale * detector.scaleFactor
-            Log.d(TAG, "onScale: $currentScale")
+            Log.d(TAG, "手势缩放: $currentScale")
             transformPath()
         }
 
@@ -322,7 +327,11 @@ class SelectableDoodleView @JvmOverloads constructor(
                 return field
             }
         var originPath = Path(path)
-
+        val originBounds: RectF = RectF()
+            get() {
+                originPath.computeBounds(field, true)
+                return field
+            }
         var transform = Matrix()
 
         //偏移量
@@ -340,6 +349,7 @@ class SelectableDoodleView @JvmOverloads constructor(
         //缩放中心点
         var pivotX = 1f
         var pivotY = 1f
+        var isButtonScaling = false
         var isScaling = false
         var isRoting = false
         var rotate = 0f
@@ -379,5 +389,6 @@ class SelectableDoodleView @JvmOverloads constructor(
         private val SAFE_WIDTH = 10f.dp
 
         private const val MIN_SCALE = 0.8f
+        private const val MAX_SCALE = 3f
     }
 }
