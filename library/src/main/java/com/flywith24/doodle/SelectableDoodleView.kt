@@ -1,5 +1,6 @@
 package com.flywith24.doodle
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
@@ -8,8 +9,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
-import kotlin.math.asin
-import kotlin.math.hypot
+import kotlin.math.atan2
 import kotlin.math.sqrt
 
 
@@ -18,12 +18,15 @@ import kotlin.math.sqrt
  * @date   2020/8/3
  * time   11:45
  * description
- * 涂鸦路径可选中
+ * 涂鸦路径可选中/旋转/平移/缩放
  */
 class SelectableDoodleView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr), GestureDetector.OnGestureListener,
     ScaleGestureDetector.OnScaleGestureListener {
+    /**
+     * 路径画笔
+     */
     private val mPaint by lazy {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.RED
@@ -32,6 +35,10 @@ class SelectableDoodleView @JvmOverloads constructor(
             strokeCap = Paint.Cap.ROUND
         }
     }
+
+    /**
+     * 边框画笔
+     */
     private val mBoundPaint by lazy {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
@@ -50,31 +57,60 @@ class SelectableDoodleView @JvmOverloads constructor(
         R.drawable.doodle_action_btn_rotate_n,
         R.drawable.doodle_action_btn_scale_n
     )
+
+    /**
+     * 当前绘制路径
+     */
     private var mCurrentPath: PathItem? = null
+
+    /**
+     * 当前选中路径
+     */
     private var mSelectedPath: PathItem? = null
     private var mLastX = 0f
     private var mLastY = 0f
 
     init {
         for (resId in mResIds) {
-            mActionIcons[resId] =
-                ActionIconItem(BitmapFactory.decodeResource(resources, resId), resId)
+            //初始化三个操作按钮
+            mActionIcons[resId] = ActionIconItem(BitmapFactory.decodeResource(resources, resId))
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_UP) {
+            //手指抬起
             if (mSelectedPath == null) {
-                // 设置 originPath，防止调用 path.transform 导致 path 改变
-                mCurrentPath?.apply { originPath = Path(path) }
+                mCurrentPath?.apply {
+                    // 设置 originPath，防止调用 path.transform 导致 path 改变
+                    originPath = Path(path)
+                    /*
+                     * 存储四个顶点
+                     */
+                    val rect = originBounds
+                    pivotX = rect.centerX()
+                    pivotY = rect.centerY()
+                    //存储 左上，右上，左下，右下位置，内边距 INSIDE_WIDTH，否则不好看
+                    srcPs = floatArrayOf(
+                        rect.left - INSIDE_WIDTH, rect.top - INSIDE_WIDTH,
+                        rect.right + INSIDE_WIDTH, rect.top - INSIDE_WIDTH,
+                        rect.left - INSIDE_WIDTH, rect.bottom + INSIDE_WIDTH,
+                        rect.right + INSIDE_WIDTH, rect.bottom + INSIDE_WIDTH
+                    )
+                    dstPs = srcPs.clone()
+                }
                 // 置空 mCurrentPath，代表一次涂鸦完成
                 mCurrentPath = null
             } else {
-                //将边框上的 icon 显示出来
-                mSelectedPath!!.isButtonScaling = false
-                mSelectedPath!!.isScaling = false
-                mSelectedPath!!.isRoting = false
-                invalidate()
+                with(mSelectedPath!!) {
+                    //将边框上的 icon 显示出来
+                    isMoving = false
+                    isButtonScaling = false
+                    isScaling = false
+                    isRoting = false
+                    invalidate()
+                }
             }
         }
         var result = mDetector.onTouchEvent(event)
@@ -88,18 +124,15 @@ class SelectableDoodleView @JvmOverloads constructor(
         for (item in mPathList) {
             canvas.drawPath(item.path, mPaint)
         }
-        // 画边框
-        drawBound(canvas)
+        // 画边框 + 操作按钮
+        drawFrame(canvas)
     }
 
-    private fun isInPath(e: MotionEvent): PathItem? {
-        for (item in mPathList) {
-            if (item.bounds.contains(e.x, e.y)) {
-                return item
-            }
-        }
-        return null
-    }
+    /**
+     * 是否点击在所有已画 path 范围内，如果是则返回相应的 PathItem，否则返回 null
+     */
+    private fun isInPath(e: MotionEvent): PathItem? =
+        mPathList.find { it.bounds.contains(e.x, e.y) }
 
     /**
      * 是否点击到 action 按钮
@@ -107,73 +140,92 @@ class SelectableDoodleView @JvmOverloads constructor(
     private fun isInActionIcon(resId: Int, e: MotionEvent): Boolean =
         mActionIcons[resId]?.bounds?.contains(e.x, e.y) ?: false
 
-    private fun drawBound(canvas: Canvas) {
+    /**
+     * 绘制边框
+     */
+    private fun drawFrame(canvas: Canvas) {
+        // 选中元素为空则不绘制
         if (mSelectedPath == null) return
-        canvas.save()
         with(mSelectedPath!!) {
-//            canvas.rotate(rotate, pivotX, pivotY)
-            canvas.drawRect(
-                bounds.left - INSIDE_WIDTH,
-                bounds.top - INSIDE_WIDTH,
-                bounds.right + INSIDE_WIDTH,
-                bounds.bottom + INSIDE_WIDTH,
-                mBoundPaint
-            )
+            /**
+             * 下标 0 1 分别为左上角 x，y，依次类推
+             * 01-------23
+             * |        |
+             * |        |
+             * |        |
+             * 45-------67
+             */
+            //(0,1) - (2,3)
+            canvas.drawLine(dstPs[0], dstPs[1], dstPs[2], dstPs[3], mBoundPaint)
+            //(0,1) - (4,5)
+            canvas.drawLine(dstPs[0], dstPs[1], dstPs[4], dstPs[5], mBoundPaint)
+            //(2,3) - (6,7)
+            canvas.drawLine(dstPs[2], dstPs[3], dstPs[6], dstPs[7], mBoundPaint)
+            //(4,5) - (6,7)
+            canvas.drawLine(dstPs[4], dstPs[5], dstPs[6], dstPs[7], mBoundPaint)
+
+            //旋转/缩放 状态下隐藏按钮
             if (!isButtonScaling && !isRoting && !isScaling) {
                 //左上角 删除按钮
                 val delete = mActionIcons[R.drawable.doodle_action_btn_delete_n]!!
-                delete.left = bounds.left - INSIDE_WIDTH - delete.bitmap.width / 2
-                delete.top = bounds.top - INSIDE_WIDTH - delete.bitmap.height / 2
+                delete.left = dstPs[0] - delete.bitmap.width / 2
+                delete.top = dstPs[1] - delete.bitmap.height / 2
                 canvas.drawBitmap(delete.bitmap, delete.left, delete.top, null)
 
                 //右上角 旋转按钮
                 val rotate = mActionIcons[R.drawable.doodle_action_btn_rotate_n]!!
-                rotate.left = bounds.right - INSIDE_WIDTH
-                rotate.top = bounds.top - INSIDE_WIDTH - rotate.bitmap.height / 2
+                rotate.left = dstPs[2] - rotate.bitmap.width / 2
+                rotate.top = dstPs[3] - rotate.bitmap.height / 2
                 canvas.drawBitmap(rotate.bitmap, rotate.left, rotate.top, null)
 
                 //右下角 缩放按钮
                 val scale = mActionIcons[R.drawable.doodle_action_btn_scale_n]!!
-                scale.left = bounds.right - INSIDE_WIDTH
-                scale.top = bounds.bottom - INSIDE_WIDTH
+                scale.left = dstPs[6] - rotate.bitmap.width / 2
+                scale.top = dstPs[7] - rotate.bitmap.height / 2
                 canvas.drawBitmap(scale.bitmap, scale.left, scale.top, null)
             }
         }
-        canvas.restore()
     }
 
     override fun onSingleTapUp(e: MotionEvent): Boolean {
-        mSelectedPath = isInPath(e)
-        Log.i(TAG, "onSingleTapUp: 是否点击 path ${mSelectedPath != null}")
+        // 单击抬起，为选中路径 赋值，可能为 null
+        val temp = isInPath(e)
+        Log.i(TAG, "onSingleTapUp: 是否点击 path $temp $mSelectedPath")
+        mSelectedPath = temp
         invalidate()
         return false
     }
 
     override fun onDown(e: MotionEvent): Boolean {
-        Log.d(TAG, "onDown: ")
         mSelectedPath?.apply {
+            //已有选中路径
+            //1. 判断点击区域是否为 action 按钮
+            //2. 判断点击区域是否在已画路径区域内，如果不在，清空选中路径
             when {
-                //如果是点击到删除按钮，直接删除不传递事件
+                //点击到删除按钮，直接删除不传递事件
                 isInActionIcon(R.drawable.doodle_action_btn_delete_n, e) -> {
                     mPathList.remove(this)
                     mSelectedPath = null
                     invalidate()
+                    Log.d(TAG, "onDown: 点击到删除按钮，不再传递事件")
                     return false
                 }
-                // 如果是点击到选中或缩放，do nothing
+                // 点击到旋转，初始化相应数据
                 isInActionIcon(R.drawable.doodle_action_btn_rotate_n, e) -> {
                     isRoting = true
-
+                    Log.d(TAG, "onDown: 点击到旋转按钮")
                 }
+                // 点击到缩放，初始化相应数据
                 isInActionIcon(R.drawable.doodle_action_btn_scale_n, e) -> {
                     isButtonScaling = true
                     initialScale = currentScale
-                    pivotX = bounds.right - bounds.width() / 2
-                    pivotY = bounds.bottom - bounds.height() / 2
-                    originDistance = getDistance(pivotX, pivotY, bounds.right, bounds.bottom)
+                    //缩放按钮距中心点距离
+                    originDistance = getDistance(pivotX, pivotY, dstPs[6], dstPs[7])
+                    Log.d(TAG, "onDown: 点击到缩放按钮")
                 }
-                // 已有选中 item，且新点击的位置不是已画路径区域（前两个判断优先级更高）
-                isInPath(e) == null -> mSelectedPath = null
+                // 已有选中 item，且新点击的位置不是已画路径区域
+                isInPath(e) != mSelectedPath -> mSelectedPath = null
+
             }
         }
         // 接管触摸逻辑，返回 true
@@ -194,16 +246,32 @@ class SelectableDoodleView @JvmOverloads constructor(
         return false
     }
 
-    fun getDistance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
+    /**
+     * 计算两点距离
+     * [x1] [y1] 点 1 坐标
+     * [x2] [y2] 点 2 坐标
+     */
+    private fun getDistance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
         val distanceX = x2 - x1
         val distanceY = y2 - y1
         return sqrt(distanceX * distanceX + distanceY * distanceY)
     }
 
-    private fun getAngle(pivotX: Float, pivotY: Float, touchX: Float, touchY: Float): Float {
-        val x = touchX - pivotX
-        val y = touchY - pivotY
-        return (asin(y / hypot(x, y)) * 180 / Math.PI).toFloat()
+    /**
+     * 计算角度
+     * [originX] [originY] 原始旋转按钮的位置
+     * [touchX] [touchY] 旋转时手指触摸点的位置
+     * [pivotX] [pivotY] 旋转中心点位置
+     */
+    private fun computeDegree(
+        originX: Float, originY: Float,
+        touchX: Float, touchY: Float,
+        pivotX: Float, pivotY: Float
+    ): Float {
+        val angle1 = atan2(originY - pivotY, originX - pivotX)
+        val angle2 = atan2(touchY - pivotY, touchX - pivotX)
+        //弧度转角度
+        return ((angle2 - angle1) * 180 / Math.PI).toFloat()
     }
 
     override fun onScroll(
@@ -220,6 +288,7 @@ class SelectableDoodleView @JvmOverloads constructor(
                 mCurrentPath!!.path.moveTo(e1.x, e1.y)
                 mLastX = e1.x
                 mLastY = e1.y
+                Log.d(TAG, "onScroll: 第一笔，设置起点")
             } else {
                 //贝塞尔曲线
                 mCurrentPath!!.path.quadTo(
@@ -232,41 +301,34 @@ class SelectableDoodleView @JvmOverloads constructor(
                 mLastY = e2.y
             }
         } else {
-            Log.i(TAG, "onScroll: ")
-            when {
-                /* mSelectedPath!!.isRoting
-                         || isInActionIcon(R.drawable.doodle_action_btn_rotate_n, e1) -> {
-                     mSelectedPath?.apply {
-                         pivotX = bounds.right - bounds.width() / 2
-                         pivotY = bounds.bottom - bounds.height() / 2
-                         rotate = getAngle(pivotX, pivotY, e2.x, e2.y)
-                         Log.e(TAG, "旋转: ${rotate}")
-
-                         transform.setRotate(rotate, pivotX, pivotY)
-                         // 对 originPath 做 transform，结果影响到 path，originPath 保持不变
-                         originPath.transform(transform, path)
-                         isRoting = true
-                     }
-                 }*/
-                mSelectedPath!!.isButtonScaling
-                        || isInActionIcon(R.drawable.doodle_action_btn_scale_n, e1) -> {
-                    mSelectedPath!!.apply {
-                        isButtonScaling = true
-                        pivotX = bounds.right - bounds.width() / 2
-                        pivotY = bounds.bottom - bounds.height() / 2
-                        currentScale =
-                            initialScale * getDistance(pivotX, pivotY, e2.x, e2.y) / originDistance
-                        Log.e(TAG, "按钮缩放 onScale: $currentScale")
+            with(mSelectedPath!!) {
+                when {
+                    //正在拖拽移动，防止误触旋转和缩放
+                    isMoving -> {
+                        move(distanceX, distanceY)
+                    }
+                    //旋转中 或 点击到了旋转按钮
+                    isRoting || isInActionIcon(R.drawable.doodle_action_btn_rotate_n, e1) -> {
+                        isRoting = true
+                        currentRotate =
+                            computeDegree(srcPs[2], srcPs[3], e2.x, e2.y, pivotX, pivotY)
+                        Log.d(TAG, "旋转: 角度：$currentRotate  中心点：$pivotX $pivotY")
                         transformPath()
                     }
-                }
-                //拖拽移动
-                else -> {
-                    mSelectedPath!!.apply {
-                        offsetX -= distanceX
-                        offsetY -= distanceY
-                        Log.e(TAG, "拖拽 onScale: $currentScale $offsetX $offsetY")
+
+                    //按钮缩放中 或 点击到了缩放按钮
+                    isButtonScaling || isInActionIcon(R.drawable.doodle_action_btn_scale_n, e1) -> {
+                        isButtonScaling = true
+                        // 本次缩放 = 手指触摸点到中心点距离 / 缩放按钮到中心点距离
+                        // 当前缩放 = 初始缩放 * 本次缩放
+                        currentScale =
+                            initialScale * getDistance(pivotX, pivotY, e2.x, e2.y) / originDistance
+                        Log.d(TAG, "onScroll: 按钮缩放 $currentScale")
                         transformPath()
+                    }
+                    //拖拽移动
+                    else -> {
+                        move(distanceX, distanceY)
                     }
                 }
             }
@@ -275,18 +337,37 @@ class SelectableDoodleView @JvmOverloads constructor(
         return false
     }
 
+    /**
+     * 拖拽移动
+     */
+    private fun PathItem.move(
+        distanceX: Float,
+        distanceY: Float
+    ) {
+        isMoving = true
+        offsetX -= distanceX
+        offsetY -= distanceY
+        Log.d(TAG, "onScroll: 拖拽移动  $currentScale $offsetX $offsetY")
+        transformPath()
+    }
+
+    /**
+     * 使用 Matrix 进行「缩放/旋转/平移」的操作
+     * 每次均重置原来的操作
+     * 针对原始path（[PathItem.originPath]）进行操作
+     */
     private fun PathItem.transformPath() {
-        transform.reset()
-        transform.preScale(
-            currentScale,
-            currentScale,
-            originBounds.centerX(),
-            originBounds.centerY()
-        )
-        Log.i(TAG, "transformPath: preScale ${originBounds.centerX()} ,${originBounds.centerY()}")
+
+        Log.i(TAG, "transformPath: preScale $pivotX ,${pivotY}")
+        // setX 方法会重置矩阵，相当于每次重置之前的转换，使用当前值来设置「缩放/旋转/平移」
+        transform.setScale(currentScale, currentScale, pivotX, pivotY)
+        transform.postRotate(currentRotate, pivotX, pivotY)
         transform.postTranslate(offsetX, offsetY)
+
         // 对 originPath 做 transform，结果影响到 path，originPath 保持不变
         originPath.transform(transform, path)
+        // 对四个顶点 transform，为了让「选中状态的边框与操作按钮」与 path 同步
+        transform.mapPoints(dstPs, srcPs)
     }
 
     override fun onLongPress(e: MotionEvent?) {
@@ -294,44 +375,51 @@ class SelectableDoodleView @JvmOverloads constructor(
     }
 
     override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-        Log.d(TAG, "onScaleBegin: ")
+        Log.d(TAG, "onScaleBegin: 双指手势缩放开始")
+        //双指手势缩放开始，初始化 scale
         mSelectedPath?.apply {
             isScaling = true
             initialScale = currentScale
-            pivotX = bounds.right - bounds.width() / 2
-            pivotY = bounds.bottom - bounds.height() / 2
         }
         return true
     }
 
     override fun onScaleEnd(detector: ScaleGestureDetector) {
-        Log.d(TAG, "onScaleEnd: ")
+        Log.d(TAG, "onScaleEnd: 双指手势缩放结束")
     }
 
     override fun onScale(detector: ScaleGestureDetector): Boolean {
         mSelectedPath?.apply {
             currentScale = initialScale * detector.scaleFactor
-            Log.d(TAG, "手势缩放: $currentScale")
+            Log.d(TAG, "手势缩放: 当前 scale $currentScale")
             transformPath()
         }
-
         invalidate()
         return false
     }
 
     class PathItem {
+        //经过转换后的 path
         val path = Path()
+
+        //path 边界，每次动态计算
         val bounds: RectF = RectF()
             get() {
                 path.computeBounds(field, true)
                 return field
             }
-        var originPath = Path(path)
+
+        //第一次画完的原始 path
+        lateinit var originPath: Path
+
+        //原始 path 边界，每次动态计算
         val originBounds: RectF = RectF()
             get() {
                 originPath.computeBounds(field, true)
                 return field
             }
+
+        // 使用 Matrix 做变换
         var transform = Matrix()
 
         //偏移量
@@ -341,21 +429,40 @@ class SelectableDoodleView @JvmOverloads constructor(
         //当前缩放值
         var currentScale = 1f
 
+        //当前旋转值
+        var currentRotate = 0f
+
         //初始缩放值
         var initialScale = 1f
 
+        //当前缩放按钮距中心点距离
         var originDistance = 0f
 
-        //缩放中心点
+        //原始 path 中心点
         var pivotX = 1f
         var pivotY = 1f
+
+        var isMoving = false
         var isButtonScaling = false
         var isScaling = false
         var isRoting = false
-        var rotate = 0f
+
+        /**
+         * 下标 0 1 分别为左上角 x，y，依次类推
+         * 01-------23
+         * |        |
+         * |        |
+         * |        |
+         * 45-------67
+         */
+        //原始路径四个顶点集合，这些点位置是计算了内边距 INSIDE_WIDTH 后的
+        lateinit var srcPs: FloatArray
+
+        //转换后路径四个顶点集合
+        lateinit var dstPs: FloatArray
     }
 
-    class ActionIconItem(val bitmap: Bitmap, val resId: Int) {
+    class ActionIconItem(val bitmap: Bitmap) {
         var left = 0f
         var top = 0f
         val bounds: RectF = RectF()
